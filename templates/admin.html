@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Remote Controller</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #334155 50%, #475569 75%, #64748b 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Arial', sans-serif;
+            padding: 1rem;
+        }
+        .drone-remote {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border-radius: 2rem;
+            padding: 2rem;
+            box-shadow:
+                0 25px 50px -12px rgba(0, 0, 0, 0.8),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1),
+                0 0 0 1px rgba(255, 255, 255, 0.05);
+            width: 100%;
+            max-width: 600px;
+            border: 2px solid #374151;
+        }
+        .drone-button {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+        .drone-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+        .drone-button:hover::before {
+            left: 100%;
+        }
+        .drone-button:active {
+            transform: translateY(2px) scale(0.95);
+            box-shadow: none;
+        }
+        .drone-button.active {
+            border-color: #60a5fa;
+            box-shadow: 0 0 10px #60a5fa;
+        }
+        .joystick {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #4b5563, #374151);
+            border: 3px solid #6b7280;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow:
+                inset 0 2px 4px rgba(0,0,0,0.3),
+                0 4px 8px rgba(0,0,0,0.2);
+        }
+        #videoFeed {
+            border: 3px solid #4b5563;
+            border-radius: 1rem;
+            width: 100%;
+            max-width: 560px;
+            aspect-ratio: 16/9;
+            background: linear-gradient(45deg, #000, #1a1a1a);
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+        #messageDisplay {
+            background: linear-gradient(145deg, #374151, #1f2937);
+            padding: 1rem;
+            border-radius: 1rem;
+            min-height: 3rem;
+            border: 2px solid #4b5563;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .altitude-display {
+            background: linear-gradient(145deg, #1f2937, #374151);
+            border: 2px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="drone-remote text-white">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-drone text-3xl text-blue-400"></i>
+                <h1 class="text-2xl font-bold">DRONE CONTROLLER</h1>
+            </div>
+            <div class="flex items-center space-x-2">
+                <div class="status-light"></div>
+                <span class="text-sm text-green-400">CONNECTED</span>
+            </div>
+        </div>
+
+        <!-- Status Display -->
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold mb-2 flex items-center">
+                <i class="fas fa-satellite-dish mr-2 text-yellow-400"></i>
+                Current Command
+            </h2>
+            <div id="messageDisplay" class="text-center font-mono text-lg">{{ data.message }}</div>
+        </div>
+
+        <!-- Flight Controls -->
+        <div class="grid grid-cols-2 gap-6 mb-6">
+            <!-- Left Joystick Area (Movement) -->
+            <div class="text-center">
+                <h3 class="text-sm font-semibold mb-2 text-gray-300">MOVEMENT</h3>
+                <div class="grid grid-cols-3 gap-2">
+                    <div></div>
+                    <button data-command="Move Up" class="drone-button bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-blue-400">
+                        <i class="fas fa-chevron-up text-xl"></i>
+                    </button>
+                    <div></div>
+
+                    <button data-command="Move Left" class="drone-button bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-blue-400">
+                        <i class="fas fa-chevron-left text-xl"></i>
+                    </button>
+                    <div class="joystick">
+                        <i class="fas fa-arrows-alt text-gray-300"></i>
+                    </div>
+                    <button data-command="Move Right" class="drone-button bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-blue-400">
+                        <i class="fas fa-chevron-right text-xl"></i>
+                    </button>
+
+                    <div></div>
+                    <button data-command="Move Down" class="drone-button bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-blue-400">
+                        <i class="fas fa-chevron-down text-xl"></i>
+                    </button>
+                    <div></div>
+                </div>
+            </div>
+
+            <!-- Right Controls -->
+            <div class="text-center">
+                <h3 class="text-sm font-semibold mb-2 text-gray-300">FLIGHT CONTROLS</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button data-command="Take Off" class="drone-button bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg border-green-400">
+                        <i class="fas fa-plane-departure text-xl mb-1"></i>
+                        <div class="text-xs">TAKEOFF</div>
+                    </button>
+                    <button data-command="Land" class="drone-button bg-gradient-to-br from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg border-orange-400">
+                        <i class="fas fa-plane-arrival text-xl mb-1"></i>
+                        <div class="text-xs">LAND</div>
+                    </button>
+                    <button data-command="Hover" class="drone-button bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg border-purple-400">
+                        <i class="fas fa-pause text-xl mb-1"></i>
+                        <div class="text-xs">HOVER</div>
+                    </button>
+                    <button data-command="Emergency Stop" class="drone-button bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-4 px-4 rounded-xl shadow-lg border-red-400">
+                        <i class="fas fa-exclamation-triangle text-xl mb-1"></i>
+                        <div class="text-xs">STOP</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera & Gimbal Controls -->
+        <div class="grid grid-cols-4 gap-2 mb-6">
+            <button data-command="Camera Up" class="drone-button bg-gradient-to-br from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-camera text-lg mr-1"></i>
+                <i class="fas fa-arrow-up text-sm"></i>
+            </button>
+            <button data-command="Camera Down" class="drone-button bg-gradient-to-br from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-camera text-lg mr-1"></i>
+                <i class="fas fa-arrow-down text-sm"></i>
+            </button>
+            <button data-command="Start Recording" class="drone-button bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-record-vinyl text-lg"></i>
+            </button>
+            <button data-command="Stop Recording" class="drone-button bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-stop text-lg"></i>
+            </button>
+            <button data-command="Take Photo" class="drone-button bg-gradient-to-br from-yellow-600 to-yellow-700 hover:from-yellow-500 hover:to-yellow-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-camera-retro text-lg"></i>
+            </button>
+            <button data-command="Mode Top" class="drone-button bg-gradient-to-br from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-camera text-lg mr-1"></i>
+                <i class="fas fa-arrow-circle-down text-sm"></i>
+            </button>
+            <button data-command="Flip" class="drone-button bg-gradient-to-br from-pink-600 to-pink-700 hover:from-pink-500 hover:to-pink-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-sync-alt text-lg"></i>
+            </button>
+            <button data-command="Return to Home" class="drone-button bg-gradient-to-br from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg">
+                <i class="fas fa-home text-lg"></i>
+            </button>
+        </div>
+
+        <!-- Live Video Feed -->
+        <div class="mb-4">
+            <h2 class="text-lg font-semibold mb-2 flex items-center">
+                <i class="fas fa-video mr-2 text-red-400"></i>
+                Live Video Feed
+                <div class="ml-auto flex items-center space-x-4 text-sm">
+                    <div class="altitude-display">
+                        <i class="fas fa-mountain mr-1"></i>
+                        ALT: <span class="text-green-400">125m</span>
+                    </div>
+                    <div class="altitude-display">
+                        <i class="fas fa-battery-three-quarters mr-1"></i>
+                        <span class="text-green-400">84%</span>
+                    </div>
+                </div>
+            </h2>
+            <img id="videoFeed" src="" alt="Live drone video feed">
+        </div>
+
+        <!-- Quick Commands -->
+        <div class="text-center">
+            <p class="text-sm text-gray-400 mb-2">Quick Commands:</p>
+            <div class="flex flex-wrap justify-center gap-4 text-xs">
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">↑↓←→</kbd> Move</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">Space</kbd> Hover</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">T</kbd> Takeoff</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">L</kbd> Land</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">R</kbd> Record</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">Q</kbd> Stop Record</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">P</kbd> Photo</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">M</kbd> Mode Top</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">F</kbd> Flip</span>
+                <span><kbd class="bg-gray-700 px-2 py-1 rounded">H</kbd> RTH</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const messageDisplay = document.getElementById('messageDisplay');
+        const heldButtons = new Set();
+        const heldKeys = new Set();
+        let intervalId = null;
+
+        function sendCommand(message) {
+            socket.emit('update_data', { message: message });
+            messageDisplay.classList.add('ring-2', 'ring-blue-500');
+            setTimeout(() => messageDisplay.classList.remove('ring-2', 'ring-blue-500'), 800);
+        }
+
+        function updateCommand() {
+            if (heldButtons.size === 0 && heldKeys.size === 0) {
+                if (intervalId) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                    sendCommand('STANDBY');
+                }
+                return;
+            }
+            const commands = [...heldButtons, ...heldKeys.values()];
+            const message = commands.length > 0 ? commands.join(' + ') : 'STANDBY';
+            sendCommand(message);
+        }
+
+        function startSendingCommand(command, button) {
+            heldButtons.add(command);
+            if (button) button.classList.add('active');
+            if (!intervalId) {
+                updateCommand();
+                intervalId = setInterval(updateCommand, 200); // Send every 200ms
+            }
+        }
+
+        function stopSendingCommand(command, button) {
+            heldButtons.delete(command);
+            if (button) button.classList.remove('active');
+            updateCommand();
+        }
+
+        // Button event listeners
+        document.querySelectorAll('.drone-button').forEach(button => {
+            const command = button.getAttribute('data-command');
+
+            // Mouse events
+            button.addEventListener('mousedown', () => startSendingCommand(command, button));
+            button.addEventListener('mouseup', () => stopSendingCommand(command, button));
+            button.addEventListener('mouseleave', () => stopSendingCommand(command, button));
+
+            // Touch events for mobile
+            button.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling
+                startSendingCommand(command, button);
+            });
+            button.addEventListener('touchend', () => stopSendingCommand(command, button));
+            button.addEventListener('touchcancel', () => stopSendingCommand(command, button));
+        });
+
+        socket.on('data_updated', function(newData) {
+            messageDisplay.textContent = newData.message;
+        });
+
+        socket.on('video_frame', function(frameData) {
+            document.getElementById('videoFeed').src = frameData;
+        });
+
+        // Keyboard controls with multi-hold
+        const keyToCommand = {
+            'arrowup': 'Move Up',
+            'arrowdown': 'Move Down',
+            'arrowleft': 'Move Left',
+            'arrowright': 'Move Right',
+            ' ': 'Hover',
+            't': 'Take Off',
+            'l': 'Land',
+            'r': 'Start Recording',
+            'q': 'Stop Recording',
+            'p': 'Take Photo',
+            'escape': 'Emergency Stop',
+            'w': 'Camera Up',
+            's': 'Camera Down',
+            'm': 'Mode Top',
+            'f': 'Flip',
+            'h': 'Return to Home'
+        };
+
+        document.addEventListener('keydown', function(event) {
+            const key = event.key.toLowerCase();
+            if (keyToCommand[key] && !heldKeys.has(key)) {
+                event.preventDefault(); // Prevent scrolling for Space
+                heldKeys.add(key);
+                startSendingCommand(keyToCommand[key], document.querySelector(`[data-command="${keyToCommand[key]}"]`));
+            }
+        });
+
+        document.addEventListener('keyup', function(event) {
+            const key = event.key.toLowerCase();
+            if (keyToCommand[key] && heldKeys.has(key)) {
+                heldKeys.delete(key);
+                stopSendingCommand(keyToCommand[key], document.querySelector(`[data-command="${keyToCommand[key]}"]`));
+            }
+        });
+
+        // Simulate battery and altitude updates
+        setInterval(() => {
+            const battery = Math.floor(Math.random() * 20) + 80;
+            const altitude = Math.floor(Math.random() * 50) + 100;
+            document.querySelector('.altitude-display:last-child span').textContent = battery + '%';
+            document.querySelector('.altitude-display:first-child span').textContent = altitude + 'm';
+        }, 3000);
+    </script>
+</body>
+</html>
