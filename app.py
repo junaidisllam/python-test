@@ -59,9 +59,5 @@ def handle_video_frame(frame_data):
     # Broadcast the frame to all connected admin clients
     emit('video_frame', frame_data, broadcast=True, namespace='/')
 
-# For Gunicorn deployment
-application = socketio
-
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    socketio.run(app, host='0.0.0.0', port=port, debug=True)
+    socketio.run(app)
